@@ -1,8 +1,6 @@
 from flask import Flask, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 from time_correlation import correlate_flows
-
-# legacy imports (not used in v2.0 flow)
 from onion_trace_backend import PCAPParser, CorrelationEngine, ForensicReporter
 from ml_detector import MLPCAPAnalyzer
 import json
@@ -39,7 +37,6 @@ CASE_LOG = "case_history.jsonl"
 
 
 def append_case_history(filename, ml_report):
-    """Append a single case entry to JSONL file and return case_id."""
     case_id = str(uuid.uuid4())[:8]
     summary = ml_report.get("summary", {})
     entry = {
@@ -64,11 +61,9 @@ def append_case_history(filename, ml_report):
 
 
 def generate_network_graph_image(graph_data):
-    """Generate a network graph visualization as image bytes."""
     try:
         G = nx.DiGraph()
         
-        # Add nodes and edges from graph_data
         if graph_data and graph_data.get("links"):
             for link in graph_data["links"]:
                 source = link.get("source", "Unknown")
@@ -78,19 +73,15 @@ def generate_network_graph_image(graph_data):
         if G.number_of_nodes() == 0:
             return None
         
-        # Use spring layout for visualization
         pos = nx.spring_layout(G, k=2, iterations=50, seed=42)
         
-        # Create drawing
         drawing = Drawing(6*inch, 4*inch)
         
-        # Draw edges
         for edge in G.edges(data=True):
             src, tgt, data = edge
             x1, y1 = pos[src]
             x2, y2 = pos[tgt]
             
-            # Scale to drawing coordinates
             x1 = 0.5*inch + x1 * 2.5*inch
             y1 = 2*inch - y1 * 1.8*inch
             x2 = 0.5*inch + x2 * 2.5*inch
@@ -100,7 +91,6 @@ def generate_network_graph_image(graph_data):
             line = Line(x1, y1, x2, y2, strokeColor=colors.HexColor("#208090"), strokeWidth=1.5)
             drawing.add(line)
             
-            # Add label with confidence
             conf = data.get("conf", 0)
             mid_x = (x1 + x2) / 2
             mid_y = (y1 + y2) / 2
@@ -108,7 +98,6 @@ def generate_network_graph_image(graph_data):
             label = String(mid_x, mid_y, f"{conf:.0f}%", fontSize=7, fillColor=colors.HexColor("#208090"))
             drawing.add(label)
         
-        # Draw nodes
         from reportlab.graphics.shapes import Circle
         for node in G.nodes():
             x, y = pos[node]
@@ -118,14 +107,12 @@ def generate_network_graph_image(graph_data):
             circle = Circle(x, y, 0.15*inch, fillColor=colors.HexColor("#32B8C6"), strokeColor=colors.HexColor("#1F2121"), strokeWidth=2)
             drawing.add(circle)
             
-            # Add IP label
             from reportlab.graphics.shapes import String
             label_text = node.split('.')[-2:] if '.' in node else node[:8]
             label_text = '.'.join(label_text) if isinstance(label_text, list) else label_text
             label = String(x - 0.3*inch, y - 0.25*inch, label_text, fontSize=6, fillColor=colors.black)
             drawing.add(label)
         
-        # Convert to image
         img_buffer = BytesIO()
         renderPM.drawToFile(drawing, img_buffer, fmt="PNG")
         img_buffer.seek(0)
@@ -138,7 +125,6 @@ def generate_network_graph_image(graph_data):
 
 @app.route("/health", methods=["GET"])
 def health():
-    """Health check with version + model status."""
     model_exists = os.path.exists("tor_detector_model.pkl")
     return jsonify(
         {
@@ -152,11 +138,6 @@ def health():
 
 @app.route("/api/analyze", methods=["POST"])
 def analyze_pcap():
-    """
-    Endpoint: POST /api/analyze
-    Body: multipart/form-data with file field 'pcap'
-    Returns: JSON ML analysis results
-    """
     print("DEBUG files keys:", list(request.files.keys()))
     if "pcap" not in request.files:
         return jsonify({"error": "No PCAP file provided"}), 400
@@ -170,28 +151,24 @@ def analyze_pcap():
         filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
         file.save(filepath)
 
-        # ============ ML v2.0 ANALYSIS ============
         analyzer = MLPCAPAnalyzer()
         ml_report = analyzer.analyze_pcap_ml(filepath)
 
         correlations = correlate_flows(ml_report["findings"])
         ml_report["time_correlations"] = correlations
 
-        # remove temp file
         if os.path.exists(filepath):
             os.remove(filepath)
 
         if "error" in ml_report:
             return jsonify({"error": ml_report["error"]}), 400
 
-        # enrich metadata
         ml_report["metadata"]["tool"] = "OnionTrace v2.0"
         ml_report["metadata"]["engine"] = "ML"
         ml_report["metadata"][
             "detection_method"
         ] = "RandomForest on temporal + size features"
 
-        # append to case history
         case_id = append_case_history(filename, ml_report)
         ml_report["metadata"]["case_id"] = case_id
 
@@ -204,7 +181,6 @@ def analyze_pcap():
         )
 
     except Exception as e:
-        # ensure cleanup
         try:
             if os.path.exists(filepath):
                 os.remove(filepath)
@@ -235,7 +211,6 @@ def generate_pdf_report():
         story = []
         styles = getSampleStyleSheet()
 
-        # ========== CUSTOM STYLES ==========
         title_style = ParagraphStyle(
             "CustomTitle",
             parent=styles["Heading1"],
@@ -286,16 +261,14 @@ def generate_pdf_report():
             textColor=colors.HexColor("#2A2A2A"),
             spaceAfter=6,
             spaceBefore=0,
-            alignment=4,  # Justify
+            alignment=4,  
         )
 
-        # ========== COVER SECTION ==========
         story.append(Spacer(1, 0.3*inch))
-        story.append(Paragraph("OnionTrace v2.0", title_style))
+        story.append(Paragraph("OnionTrace v1.0", title_style))
         story.append(Paragraph("ML-Based TOR Traffic Detection Report", subtitle_style))
         story.append(Spacer(1, 0.2*inch))
 
-        # Metadata section
         meta_data = [
             f"<b>Generated:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}",
             f"<b>Report Type:</b> Forensic Analysis & Network Intelligence",
@@ -310,7 +283,6 @@ def generate_pdf_report():
 
         story.append(Spacer(1, 0.3*inch))
 
-        # ========== EXECUTIVE SUMMARY ==========
         story.append(Paragraph("Executive Summary", heading2_style))
 
         tor_detected = len(findings)
@@ -330,7 +302,6 @@ def generate_pdf_report():
         story.append(Paragraph(summary_text, body_style))
         story.append(Spacer(1, 0.15*inch))
 
-        # ========== KEY METRICS ==========
         metrics_data = [
             ["Metric", "Value"],
             ["TOR Flows Detected", str(tor_detected)],
@@ -359,11 +330,9 @@ def generate_pdf_report():
         story.append(metrics_table)
         story.append(Spacer(1, 0.2*inch))
 
-        # ========== NETWORK TOPOLOGY ==========
         if graph and graph.get("links") and len(graph["links"]) > 0:
             story.append(Paragraph("Network Topology & Flow Mapping", heading2_style))
             
-            # Network graph
             link_rows = [
                 ["Origin IP", "Destination/Exit Node", "Flows", "Avg Confidence", "Classification"]
             ]
@@ -399,7 +368,6 @@ def generate_pdf_report():
             story.append(link_table)
             story.append(Spacer(1, 0.15*inch))
 
-        # ========== DETAILED FINDINGS ==========
         story.append(PageBreak())
         story.append(Paragraph("Detailed Flow Analysis", heading2_style))
         story.append(Spacer(1, 0.1*inch))
@@ -408,7 +376,6 @@ def generate_pdf_report():
             story.append(Paragraph("No TOR flows detected in this capture.", body_style))
         else:
             for i, finding in enumerate(findings, 1):
-                # Flow header
                 flow_header = (
                     f"Flow #{i} &ndash; "
                     f"{finding.get('origin_ip', 'N/A')} → {finding.get('exit_ip', 'N/A')}"
@@ -424,7 +391,6 @@ def generate_pdf_report():
                 )
                 story.append(Paragraph(flow_header, flow_header_style))
 
-                # Flow details table
                 flow_data = [
                     ["Field", "Value"],
                     ["Origin IP", finding.get("origin_ip", "N/A")],
@@ -462,11 +428,9 @@ def generate_pdf_report():
                 story.append(flow_table)
                 story.append(Spacer(1, 0.12*inch))
 
-                # Page break every 2 flows for readability
                 if i % 2 == 0 and i < len(findings):
                     story.append(Spacer(1, 0.1*inch))
 
-        # ========== METHODOLOGY PAGE ==========
         story.append(PageBreak())
         story.append(Paragraph("Technical Methodology", heading2_style))
         story.append(Spacer(1, 0.1*inch))
@@ -474,7 +438,7 @@ def generate_pdf_report():
         methodology_sections = [
             (
                 "<b>1. ML Model Architecture</b>",
-                "OnionTrace v2.0 employs a RandomForest classifier with 100 decision trees, trained on the ISCX Tor/NonTor dataset. "
+                "OnionTrace v1.0 employs a RandomForest classifier with 100 decision trees, trained on the ISCX Tor/NonTor dataset. "
                 "The model achieves high accuracy by leveraging 13 engineered features that capture temporal and statistical properties of network flows. "
                 "These features are immune to encryption, enabling traffic classification without payload inspection."
             ),
@@ -506,7 +470,6 @@ def generate_pdf_report():
             story.append(Paragraph(text, body_style))
             story.append(Spacer(1, 0.08*inch))
 
-        # ========== FOOTER PAGE ==========
         story.append(PageBreak())
         story.append(Paragraph("Report Summary & Recommendations", heading2_style))
         story.append(Spacer(1, 0.1*inch))
@@ -539,7 +502,6 @@ def generate_pdf_report():
         story.append(Spacer(1, 0.3*inch))
         story.append(Paragraph("This report is confidential and for authorized forensic use only.", meta_style))
 
-        # ========== BUILD PDF ==========
         doc.build(story)
         buffer.seek(0)
 
@@ -557,7 +519,6 @@ def generate_pdf_report():
 
 @app.route("/api/history", methods=["GET"])
 def get_history():
-    """Return list of past cases (newest first)."""
     history = []
     if os.path.exists(CASE_LOG):
         with open(CASE_LOG, "r") as f:
