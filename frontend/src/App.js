@@ -1,5 +1,12 @@
 import React, { useState } from 'react';
 import './App.css';
+import {
+  FaShieldAlt,
+  FaUpload,
+  FaHistory,
+  FaFileDownload,
+  FaSyncAlt,
+} from 'react-icons/fa';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
@@ -108,9 +115,16 @@ export default function App() {
         <button
           onClick={handleAnalyze}
           disabled={!file || loading}
-          className="btn-primary"
+          className="btn-primary btn-with-icon"
         >
-          {loading ? 'Analyzing...' : 'Start Analysis'}
+          {loading ? (
+            'Analyzing…'
+          ) : (
+            <>
+              <FaUpload className="btn-icon" />
+              <span>Start Analysis</span>
+            </>
+          )}
         </button>
         {error && <p className="error">{error}</p>}
       </div>
@@ -170,7 +184,6 @@ export default function App() {
           )}
         </div>
 
-        {/* Network Map */}
         <div className="network-map">
           <h3>Network Map (Tor-Suspect Flows)</h3>
           {graph.links && graph.links.length > 0 ? (
@@ -189,9 +202,12 @@ export default function App() {
           )}
         </div>
 
+<<<<<<< Updated upstream
         {/* Findings list */}
 {/* Time-Based Correlation */}
        {/* Time-Based Correlation */}
+=======
+>>>>>>> Stashed changes
         <div className="findings-section">
           <h3>Time-Based Correlation (Entry ↔ Exit)</h3>
 
@@ -281,8 +297,9 @@ export default function App() {
 
 
         <div className="actions">
-          <button onClick={downloadReport} className="btn-primary">
-            📥 Download Forensic Report (PDF)
+          <button onClick={downloadReport} className="btn-primary btn-with-icon">
+            <FaFileDownload className="btn-icon" />
+            <span>Download Forensic Report (PDF)</span>
           </button>
           <button
             onClick={() => {
@@ -291,9 +308,10 @@ export default function App() {
               setError(null);
               setView('upload');
             }}
-            className="btn-secondary"
+            className="btn-secondary btn-with-icon"
           >
-            ↺ Analyze Another File
+            <FaSyncAlt className="btn-icon" />
+            <span>Analyze Another File</span>
           </button>
         </div>
       </div>
@@ -345,12 +363,13 @@ export default function App() {
           )}
         </div>
       ))}
-      <div className="actions">
+      <div className="actions history-actions">
         <button
-          className="btn-secondary"
+          className="btn-secondary btn-with-icon"
           onClick={() => setView('upload')}
         >
-          ← Back to Upload
+          <FaUpload className="btn-icon" />
+          <span>Back to Upload</span>
         </button>
       </div>
     </div>
@@ -359,27 +378,35 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>🧅 OnionTrace</h1>
-        <p>
-          ML-Based TOR Traffic Classification, Temporal Fingerprinting, Case History & Forensic Reporting
-        </p>
-        <div className="header-actions">
-          <button
-            className="btn-secondary small"
-            onClick={() => {
-              setAnalysisResult(null);
-              setView('upload');
-            }}
-          >
-            ⬆ Upload
-          </button>
-          <button
-            className="btn-secondary small"
-            onClick={loadHistory}
-          >
-            📚 Case History
-          </button>
+        <div className="header-top">
+          <div className="title-wrap">
+            <FaShieldAlt className="logo-icon" />
+            <h1>OnionTrace</h1>
+          </div>
+          <div className="header-actions">
+            <button
+              className="btn-secondary btn--sm btn-with-icon"
+              onClick={() => {
+                setAnalysisResult(null);
+                setView('upload');
+              }}
+            >
+              <FaUpload className="btn-icon" />
+              <span>Upload</span>
+            </button>
+            <button
+              className="btn-secondary btn--sm btn-with-icon"
+              onClick={loadHistory}
+            >
+              <FaHistory className="btn-icon" />
+              <span>Case History</span>
+            </button>
+          </div>
         </div>
+
+        <p className="header-subtitle">
+          ML-Based TOR Traffic Classification, Temporal Fingerprinting, Case History &amp; Forensic Reporting
+        </p>
       </header>
 
       <main className="container">
