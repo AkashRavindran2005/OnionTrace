@@ -1,6 +1,17 @@
+
+# Core API
 Flask
 Flask-CORS
 Werkzeug
-reportlab
+
+# PCAP / Network Analysis
+scapy
+pyshark
+
+# Data / ML
 pandas
 numpy
+scikit-learn
+
+# Reporting
+reportlab

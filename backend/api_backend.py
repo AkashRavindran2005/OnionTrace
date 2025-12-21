@@ -1,5 +1,7 @@
 from flask import Flask, request, jsonify, send_file
 from werkzeug.utils import secure_filename
+from time_correlation import correlate_flows
+
 # legacy imports (not used in v2.0 flow)
 from onion_trace_backend import PCAPParser, CorrelationEngine, ForensicReporter
 from ml_detector import MLPCAPAnalyzer
@@ -94,6 +96,10 @@ def analyze_pcap():
         # ============ ML v2.0 ANALYSIS ============
         analyzer = MLPCAPAnalyzer()
         ml_report = analyzer.analyze_pcap_ml(filepath)
+
+        correlations = correlate_flows(ml_report["findings"])
+        ml_report["time_correlations"] = correlations
+
 
         # remove temp file
         if os.path.exists(filepath):

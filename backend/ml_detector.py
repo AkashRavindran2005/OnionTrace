@@ -264,10 +264,40 @@ class MLPCAPAnalyzer:
 
         for flow_key, prob in zip(flow_keys, tor_probabilities):
             src_ip, dst_ip = flow_key
+            packets = self.flows.get(flow_key, [])
 
-            if prob >= threshold:
-                packets = self.flows[flow_key]
+            # ----- REAL TIME EXTRACTION -----
+            timestamps = [p["timestamp"] for p in packets]
+
+            start_time = min(timestamps)
+            end_time = max(timestamps)
+            duration = end_time - start_time
+
+            from datetime import datetime, timezone
+
+            start_time_iso = datetime.fromtimestamp(
+                start_time, tz=timezone.utc
+            ).isoformat()
+
+            end_time_iso = datetime.fromtimestamp(
+                end_time, tz=timezone.utc
+            ).isoformat()
+
+            if prob >= threshold and len(packets) >= 2:
                 temporal_fp = self.compute_temporal_fingerprint(packets)
+
+                timestamps = [p["timestamp"] for p in packets]
+                start_time = min(timestamps)
+                end_time = max(timestamps)
+                duration = end_time - start_time
+
+                from datetime import datetime, timezone
+                start_time_iso = datetime.fromtimestamp(
+                    start_time, tz=timezone.utc
+                ).isoformat()
+                end_time_iso = datetime.fromtimestamp(
+                    end_time, tz=timezone.utc
+                ).isoformat()
 
                 finding = {
                     "origin_ip": src_ip,
@@ -276,9 +306,19 @@ class MLPCAPAnalyzer:
                     "confidence": float(prob * 100.0),
                     "ml_probability": float(prob),
                     "temporal_fingerprint": temporal_fp,
+
+                    # ✅ REAL TIME DATA
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "duration": duration,
+                    "start_time_iso": start_time_iso,
+                    "end_time_iso": end_time_iso,
+
                     "detection_method": "RandomForest ML Model",
                 }
+
                 findings.append(finding)
+
 
                 # build graph nodes
                 if src_ip not in nodes:

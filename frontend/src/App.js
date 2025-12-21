@@ -10,6 +10,9 @@ export default function App() {
   const [error, setError] = useState(null);
   const [view, setView] = useState('upload'); // 'upload' | 'results' | 'history'
   const [history, setHistory] = useState([]);
+  const [timeCorrelations, setTimeCorrelations] = useState([]);
+
+  
 
   const handleFileSelect = (e) => {
     setFile(e.target.files?.[0] || null);
@@ -41,6 +44,7 @@ export default function App() {
 
       const data = await response.json();
       setAnalysisResult(data);
+      setTimeCorrelations(data.data?.time_correlations || []);
       setView('results');
     } catch (err) {
       setError(err.message);
@@ -186,49 +190,95 @@ export default function App() {
         </div>
 
         {/* Findings list */}
+{/* Time-Based Correlation */}
+       {/* Time-Based Correlation */}
         <div className="findings-section">
-          <h3>ML TOR Flow Findings</h3>
-          {findings.length === 0 && (
-            <p className="no-results">No TOR flows detected in this capture.</p>
+          <h3>Time-Based Correlation (Entry ↔ Exit)</h3>
+
+          {timeCorrelations.length === 0 ? (
+            <p className="no-results">
+              No correlatable entry–exit flows observed at this capture point.
+            </p>
+          ) : (
+            timeCorrelations.map((c, idx) => {
+              const entry = findings.find(
+                f => f.origin_ip === c.entry_origin_ip
+              );
+              const exit = findings.find(
+                f => f.exit_ip === c.exit_destination_ip
+              );
+
+              if (!entry || !exit) return null;
+
+              return (
+                <div key={idx} className="finding-card">
+                  <div className="circuit-header">
+                    <h4>Correlation #{idx + 1}</h4>
+                    <span className="confidence-badge">
+                      {(c.correlation_confidence * 100).toFixed(1)}%
+                    </span>
+                  </div>
+
+                  {/* Timeline */}
+                  <div className="timeline">
+                    <div className="timeline-bar">
+                      <div
+                        className="timeline-segment"
+                        title={`${entry.start_time_iso} → ${entry.end_time_iso}`}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="circuit-diagram">
+                    <div className="node origin-node">
+                      <span className="label">Entry Origin</span>
+                      <code>{c.entry_origin_ip}</code>
+                    </div>
+                    <div className="arrow">⇄</div>
+                    <div className="node exit-node">
+                      <span className="label">Exit Destination</span>
+                      <code>{c.exit_destination_ip}</code>
+                    </div>
+                  </div>
+
+                  <div className="finding-details">
+                    <div className="detail-row">
+                      <span className="label">Temporal Match:</span>
+                      <span>{c.temporal_match ? 'Yes' : 'No'}</span>
+                    </div>
+
+                    <div className="detail-row">
+                      <span className="label">Entry Start:</span>
+                      <span>{new Date(entry.start_time_iso).toLocaleString()}</span>
+                    </div>
+
+                    <div className="detail-row">
+                      <span className="label">Entry End:</span>
+                      <span>{new Date(entry.end_time_iso).toLocaleString()}</span>
+                    </div>
+
+                    <div className="detail-row">
+                      <span className="label">Entry Duration:</span>
+                      <span>{entry.duration.toFixed(2)} seconds</span>
+                    </div>
+
+                    <div className="detail-row">
+                      <span className="label">Entry Fingerprint:</span>
+                      <code>{c.entry_fingerprint}</code>
+                    </div>
+
+                    <div className="detail-row">
+                      <span className="label">Exit Fingerprint:</span>
+                      <code>{c.exit_fingerprint}</code>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
           )}
-          {findings.map((finding, idx) => (
-            <div key={idx} className="finding-card">
-              <div className="circuit-header">
-                <h4>Flow #{idx + 1}</h4>
-                <span className="confidence-badge">
-                  {finding.confidence.toFixed(1)}%
-                </span>
-              </div>
-
-              <div className="circuit-diagram">
-                <div className="node origin-node">
-                  <span className="label">Origin</span>
-                  <code>{finding.origin_ip}</code>
-                </div>
-                <div className="arrow">→</div>
-                <div className="node exit-node">
-                  <span className="label">Exit / Peer</span>
-                  <code>{finding.exit_ip}</code>
-                </div>
-              </div>
-
-              <div className="finding-details">
-                <div className="detail-row">
-                  <span className="label">Temporal Fingerprint:</span>
-                  <code>{finding.temporal_fingerprint}</code>
-                </div>
-                <div className="detail-row">
-                  <span className="label">ML Probability:</span>
-                  <span>{finding.ml_probability.toFixed(4)}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="label">Detection Method:</span>
-                  <span>{finding.detection_method}</span>
-                </div>
-              </div>
-            </div>
-          ))}
         </div>
+
+
 
         <div className="actions">
           <button onClick={downloadReport} className="btn-primary">
