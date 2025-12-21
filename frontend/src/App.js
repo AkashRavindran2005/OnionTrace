@@ -19,8 +19,6 @@ export default function App() {
   const [history, setHistory] = useState([]);
   const [timeCorrelations, setTimeCorrelations] = useState([]);
 
-  
-
   const handleFileSelect = (e) => {
     setFile(e.target.files?.[0] || null);
     setError(null);
@@ -153,6 +151,8 @@ export default function App() {
   );
 
   const renderResultsView = () => {
+    if (!analysisResult?.data) return null;
+
     const summary = analysisResult.data.summary || {};
     const findings = analysisResult.data.findings || [];
     const graph = analysisResult.data.graph || { nodes: [], links: [] };
@@ -184,6 +184,7 @@ export default function App() {
           )}
         </div>
 
+        {/* Network Map */}
         <div className="network-map">
           <h3>Network Map (Tor-Suspect Flows)</h3>
           {graph.links && graph.links.length > 0 ? (
@@ -202,12 +203,7 @@ export default function App() {
           )}
         </div>
 
-<<<<<<< Updated upstream
-        {/* Findings list */}
-{/* Time-Based Correlation */}
-       {/* Time-Based Correlation */}
-=======
->>>>>>> Stashed changes
+        {/* Time-Based Correlation */}
         <div className="findings-section">
           <h3>Time-Based Correlation (Entry ↔ Exit)</h3>
 
@@ -218,10 +214,10 @@ export default function App() {
           ) : (
             timeCorrelations.map((c, idx) => {
               const entry = findings.find(
-                f => f.origin_ip === c.entry_origin_ip
+                (f) => f.origin_ip === c.entry_origin_ip
               );
               const exit = findings.find(
-                f => f.exit_ip === c.exit_destination_ip
+                (f) => f.exit_ip === c.exit_destination_ip
               );
 
               if (!entry || !exit) return null;
@@ -235,7 +231,7 @@ export default function App() {
                     </span>
                   </div>
 
-                  {/* Timeline */}
+                  {/* Simple timeline shell – style in CSS */}
                   <div className="timeline">
                     <div className="timeline-bar">
                       <div
@@ -265,17 +261,29 @@ export default function App() {
 
                     <div className="detail-row">
                       <span className="label">Entry Start:</span>
-                      <span>{new Date(entry.start_time_iso).toLocaleString()}</span>
+                      <span>
+                        {entry.start_time_iso
+                          ? new Date(entry.start_time_iso).toLocaleString()
+                          : 'N/A'}
+                      </span>
                     </div>
 
                     <div className="detail-row">
                       <span className="label">Entry End:</span>
-                      <span>{new Date(entry.end_time_iso).toLocaleString()}</span>
+                      <span>
+                        {entry.end_time_iso
+                          ? new Date(entry.end_time_iso).toLocaleString()
+                          : 'N/A'}
+                      </span>
                     </div>
 
                     <div className="detail-row">
                       <span className="label">Entry Duration:</span>
-                      <span>{entry.duration.toFixed(2)} seconds</span>
+                      <span>
+                        {typeof entry.duration === 'number'
+                          ? `${entry.duration.toFixed(2)} seconds`
+                          : 'N/A'}
+                      </span>
                     </div>
 
                     <div className="detail-row">
@@ -294,10 +302,11 @@ export default function App() {
           )}
         </div>
 
-
-
         <div className="actions">
-          <button onClick={downloadReport} className="btn-primary btn-with-icon">
+          <button
+            onClick={downloadReport}
+            className="btn-primary btn-with-icon"
+          >
             <FaFileDownload className="btn-icon" />
             <span>Download Forensic Report (PDF)</span>
           </button>
@@ -380,32 +389,37 @@ export default function App() {
       <header className="header">
         <div className="header-top">
           <div className="title-wrap">
-            <FaShieldAlt className="logo-icon" />
+            <FaShieldAlt size={32} className="logo-icon" />
             <h1>OnionTrace</h1>
           </div>
           <div className="header-actions">
             <button
-              className="btn-secondary btn--sm btn-with-icon"
+              className={`btn-secondary btn--sm btn-with-icon header-tab ${
+                view === 'upload' ? 'header-tab--active' : ''
+              }`}
               onClick={() => {
                 setAnalysisResult(null);
                 setView('upload');
               }}
             >
-              <FaUpload className="btn-icon" />
+              <FaUpload size={16} className="btn-icon" />
               <span>Upload</span>
             </button>
             <button
-              className="btn-secondary btn--sm btn-with-icon"
+              className={`btn-secondary btn--sm btn-with-icon header-tab ${
+                view === 'history' ? 'header-tab--active' : ''
+              }`}
               onClick={loadHistory}
             >
-              <FaHistory className="btn-icon" />
+              <FaHistory size={16} className="btn-icon" />
               <span>Case History</span>
             </button>
           </div>
         </div>
 
         <p className="header-subtitle">
-          ML-Based TOR Traffic Classification, Temporal Fingerprinting, Case History &amp; Forensic Reporting
+          ML-Based TOR Traffic Classification, Temporal Fingerprinting, Case
+          History &amp; Forensic Reporting
         </p>
       </header>
 
