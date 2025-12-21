@@ -1,8 +1,3 @@
-"""
-OnionTrace v2.0 - ML-Based TOR Detection
-Random Forest Classifier trained on real TOR traffic
-"""
-
 import struct
 import json
 from collections import defaultdict
@@ -16,16 +11,11 @@ import hashlib
 
 
 class MLPCAPAnalyzer:
-    """Extract features from PCAP files for ML classification"""
 
     def __init__(self):
         self.flows = defaultdict(list)
         self.model = None
-
-    # ---------------- PCAP PARSING ----------------
-
     def parse_pcap(self, filename):
-        """Parse PCAP using Scapy for robust IP extraction."""
         try:
             self.flows.clear()
             packet_count = 0
@@ -57,7 +47,6 @@ class MLPCAPAnalyzer:
         except Exception as e:
             return {"error": str(e)}
 
-    # ---------------- FEATURE EXTRACTION ----------------
 
     def extract_features(self, flow_key):
         """
@@ -68,34 +57,29 @@ class MLPCAPAnalyzer:
             return None
 
         packets = self.flows[flow_key]
-        if len(packets) < 5:  # need minimum packets
+        if len(packets) < 5:  
             return None
 
-        # Feature 1: packet size statistics
         sizes = [p["size"] for p in packets]
         mean_size = np.mean(sizes)
         std_size = np.std(sizes)
         min_size = np.min(sizes)
         max_size = np.max(sizes)
 
-        # Feature 2: inter-packet arrival time (IAT)
         timestamps = [p["timestamp"] for p in packets]
         iats = np.diff(timestamps)
         mean_iat = np.mean(iats) if len(iats) > 0 else 0.0
         std_iat = np.std(iats) if len(iats) > 0 else 0.0
 
-        # Feature 3: packet count and duration
         packet_count = len(packets)
         duration = timestamps[-1] - timestamps[0] if len(timestamps) > 1 else 0.0
 
-        # Feature 4: packet size distribution (TOR ≈ many ~512-byte cells)
         size_512_count = sum(1 for s in sizes if 500 <= s <= 514)
         size_512_ratio = size_512_count / len(sizes) if len(sizes) > 0 else 0.0
 
-        # Feature 5: burst detection (rapid sequences of packets)
         burst_count = 0
         current_burst_size = 1
-        burst_threshold = 0.1  # 100ms
+        burst_threshold = 0.1  
 
         for iat in iats:
             if iat < burst_threshold:
@@ -105,12 +89,10 @@ class MLPCAPAnalyzer:
                     burst_count += 1
                 current_burst_size = 1
 
-        # Feature 6: flow direction pattern
         src_ip, dst_ip = flow_key
         src_octets = src_ip.split(".")
         dst_octets = dst_ip.split(".")
 
-        # private → public = 1, other = 0
         is_private_to_public = (
             1
             if src_octets[0] in ["10", "172", "192"]
@@ -118,25 +100,24 @@ class MLPCAPAnalyzer:
             else 0
         )
 
-        # Feature 7: coefficient of variation (regularity)
         cv_iat = (std_iat / mean_iat) if mean_iat > 0 else 0.0
         cv_size = (std_size / mean_size) if mean_size > 0 else 1.0
 
         features = np.array(
             [
-                mean_size,  # 0
-                std_size,  # 1
-                min_size,  # 2
-                max_size,  # 3
-                mean_iat,  # 4
-                std_iat,  # 5
-                packet_count,  # 6
-                duration,  # 7
-                size_512_ratio,  # 8
-                burst_count,  # 9
-                is_private_to_public,  # 10
-                cv_iat,  # 11
-                cv_size,  # 12
+                mean_size,  
+                std_size,  
+                min_size,  
+                max_size,  
+                mean_iat,  
+                std_iat,  
+                packet_count,
+                duration,  
+                size_512_ratio,
+                burst_count,  
+                is_private_to_public,
+                cv_iat,  
+                cv_size, 
             ],
             dtype=float,
         )
@@ -144,7 +125,6 @@ class MLPCAPAnalyzer:
         return features
 
     def extract_all_features(self):
-        """Extract features for all flows in this PCAP."""
         X = []
         flow_keys = []
 
@@ -159,10 +139,8 @@ class MLPCAPAnalyzer:
 
         return np.array(X), flow_keys
 
-    # ---------------- TEMPORAL FINGERPRINT ----------------
 
     def compute_temporal_fingerprint(self, packets, num_iat_bins=10, max_bursts=5):
-        """Build a temporal fingerprint from IAT histogram + burst bytes."""
         timestamps = [p["timestamp"] for p in packets]
         sizes = [p["size"] for p in packets]
 
@@ -174,14 +152,12 @@ class MLPCAPAnalyzer:
         if len(iats) == 0:
             return "no_fingerprint"
 
-        # IAT histogram (log-spaced bins 1ms–10s)
         bins = np.logspace(-3, 1, num_iat_bins + 1)
         hist, _ = np.histogram(iats, bins=bins)
         if hist.sum() == 0:
             return "no_fingerprint"
         hist = (hist / hist.sum()).tolist()
 
-        # Simple burst bytes pattern
         burst_bytes = []
         current_bytes = sizes[0]
         for dt, sz in zip(iats, sizes[1:]):
@@ -198,10 +174,8 @@ class MLPCAPAnalyzer:
         fp_hash = hashlib.sha256(fp_json.encode()).hexdigest()[:12]
         return fp_hash
 
-    # ---------------- MODEL LOADING & PREDICTION ----------------
 
     def load_model(self, model_path="tor_detector_model.pkl"):
-        """Load pre-trained ML model."""
         if not os.path.exists(model_path):
             print(f"[WARNING] Model not found at {model_path}")
             return False
@@ -215,49 +189,37 @@ class MLPCAPAnalyzer:
             return False
 
     def predict_tor(self, X):
-        """
-        Predict TOR probability using ML model.
-        Returns 1D array of probabilities (0.0–1.0).
-        """
         if self.model is None:
             return None
 
         try:
-            proba = self.model.predict_proba(X)  # [[p0, p1], ...]
+            proba = self.model.predict_proba(X)  
             tor_probabilities = proba[:, 1]
             return tor_probabilities
         except Exception as e:
             print(f"[ERROR] Prediction failed: {e}")
             return None
 
-    # ---------------- MAIN ANALYSIS ----------------
-
     def analyze_pcap_ml(self, pcap_filename, threshold=0.5):
-        """Complete ML-based analysis pipeline."""
-        # Step 1: parse PCAP
         parse_result = self.parse_pcap(pcap_filename)
         if "error" in parse_result:
             return {"error": parse_result["error"]}
 
         print(f"[*] Parsed {parse_result['flows']} flows")
 
-        # Step 2: load ML model
         if not self.load_model():
             return {"error": "ML model not available."}
 
-        # Step 3: extract features
         X, flow_keys = self.extract_all_features()
         if X is None:
             return {"error": "No valid flows to analyze"}
 
         print(f"[*] Extracted features from {len(X)} flows")
 
-        # Step 4: predict
         tor_probabilities = self.predict_tor(X)
         if tor_probabilities is None:
             return {"error": "Prediction failed"}
 
-        # Step 5: build findings + graph
         findings = []
         nodes = {}
         links = {}
@@ -266,7 +228,6 @@ class MLPCAPAnalyzer:
             src_ip, dst_ip = flow_key
             packets = self.flows.get(flow_key, [])
 
-            # ----- REAL TIME EXTRACTION -----
             timestamps = [p["timestamp"] for p in packets]
 
             start_time = min(timestamps)
@@ -306,8 +267,6 @@ class MLPCAPAnalyzer:
                     "confidence": float(prob * 100.0),
                     "ml_probability": float(prob),
                     "temporal_fingerprint": temporal_fp,
-
-                    # ✅ REAL TIME DATA
                     "start_time": start_time,
                     "end_time": end_time,
                     "duration": duration,
@@ -319,14 +278,11 @@ class MLPCAPAnalyzer:
 
                 findings.append(finding)
 
-
-                # build graph nodes
                 if src_ip not in nodes:
                     nodes[src_ip] = {"id": src_ip, "type": "client"}
                 if dst_ip not in nodes:
                     nodes[dst_ip] = {"id": dst_ip, "type": "tor"}
 
-                # build graph links
                 key = (src_ip, dst_ip)
                 if key not in links:
                     links[key] = {
@@ -340,7 +296,6 @@ class MLPCAPAnalyzer:
 
         findings.sort(key=lambda x: x["confidence"], reverse=True)
 
-        # finalize graph
         for key, link in links.items():
             link["avg_conf"] = link["sum_conf"] / link["flows"]
             del link["sum_conf"]
@@ -375,21 +330,12 @@ class MLPCAPAnalyzer:
         return report
 
 
-# ============================================================================
-# TRAINING SCRIPT (flow‑capped)
-# ============================================================================
-
-
 def train_model_from_dataset(
     tor_pcap_dir,
     non_tor_pcap_dir,
     output_path="tor_detector_model.pkl",
     max_flows_per_class=30000,
 ):
-    """
-    Train RandomForest model on labeled TOR vs non-TOR PCAPs,
-    but cap the number of flows per class so training is fast and safe.
-    """
     print("[*] Training TOR Detection ML Model with flow cap")
     print("[*] Max flows per class:", max_flows_per_class)
 
@@ -508,11 +454,6 @@ def train_model_from_dataset(
         print(f"    {name}: {importance:.2%}")
 
     return True
-
-
-# ============================================================================
-# CLI
-# ============================================================================
 
 if __name__ == "__main__":
     import sys

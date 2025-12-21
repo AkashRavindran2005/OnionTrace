@@ -184,7 +184,6 @@ export default function App() {
           )}
         </div>
 
-        {/* Network Map */}
         <div className="network-map">
           <h3>Network Map (Tor-Suspect Flows)</h3>
           {graph.links && graph.links.length > 0 ? (
@@ -203,7 +202,6 @@ export default function App() {
           )}
         </div>
 
-        {/* Time-Based Correlation */}
         <div className="findings-section">
           <h3>Time-Based Correlation (Entry ↔ Exit)</h3>
 
@@ -231,7 +229,6 @@ export default function App() {
                     </span>
                   </div>
 
-                  {/* Simple timeline shell – style in CSS */}
                   <div className="timeline">
                     <div className="timeline-bar">
                       <div

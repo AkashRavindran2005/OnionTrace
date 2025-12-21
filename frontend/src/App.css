@@ -211,14 +211,14 @@
   --color-gray-200-rgb: 245, 245, 245;
 
 
-  --color-bg-1: rgba(29, 78, 216, 0.15); /* Dark blue */
-  --color-bg-2: rgba(180, 83, 9, 0.15); /* Dark yellow */
-  --color-bg-3: rgba(21, 128, 61, 0.15); /* Dark green */
-  --color-bg-4: rgba(185, 28, 28, 0.15); /* Dark red */
-  --color-bg-5: rgba(107, 33, 168, 0.15); /* Dark purple */
-  --color-bg-6: rgba(194, 65, 12, 0.15); /* Dark orange */
-  --color-bg-7: rgba(190, 24, 93, 0.15); /* Dark pink */
-  --color-bg-8: rgba(8, 145, 178, 0.15); /* Dark cyan */
+  --color-bg-1: rgba(29, 78, 216, 0.15);
+  --color-bg-2: rgba(180, 83, 9, 0.15); 
+  --color-bg-3: rgba(21, 128, 61, 0.15); 
+  --color-bg-4: rgba(185, 28, 28, 0.15); 
+  --color-bg-5: rgba(107, 33, 168, 0.15);
+  --color-bg-6: rgba(194, 65, 12, 0.15); 
+  --color-bg-7: rgba(190, 24, 93, 0.15); 
+  --color-bg-8: rgba(8, 145, 178, 0.15); 
 
 
   --color-background: var(--color-charcoal-700);
@@ -1282,8 +1282,6 @@ body {
   flex: 1;
 }
 
-
-/* Error Message */
 .error {
   background: rgba(var(--color-error-rgb), var(--status-bg-opacity));
   color: var(--color-error);
@@ -1298,10 +1296,9 @@ body {
 .header-actions {
   margin-top: var(--space-16);
   display: inline-flex;
-  gap: var(--space-12); /* controls space between Upload & Case History */
+  gap: var(--space-12); 
 }
 
-/* Make header buttons’ icon + text black, keep their pill look */
 .header-actions .btn-secondary {
   color: var(--color-black);
   border-color: var(--color-cream-50);
@@ -1313,7 +1310,6 @@ body {
 }
 
 
-/* Make header buttons’ icon + text black */
 .header-actions .btn-secondary {
   color: var(--color-black);
   border-color: var(--color-cream-50);
@@ -1330,7 +1326,6 @@ body {
 }
 
 
-/* Footer */
 .footer {
   margin-top: auto;
   background: var(--color-slate-900);

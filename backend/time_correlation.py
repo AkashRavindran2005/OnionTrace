@@ -1,5 +1,3 @@
-# backend/time_correlation.py
-
 import ipaddress
 
 def is_private_ip(ip):
@@ -10,16 +8,8 @@ def is_private_ip(ip):
 
 
 def correlate_flows(findings):
-    """
-    Perform probabilistic time-based correlation between Tor-like flows.
-    This does NOT deanonymize Tor. It correlates flows observed at the same
-    capture vantage point using temporal fingerprints and confidence scores.
-    """
-
     entry_flows = []
     exit_flows = []
-
-    # Step 1: classify flows heuristically
     for f in findings:
         origin = f.get("origin_ip")
         exit_ip = f.get("exit_ip")
@@ -32,7 +22,6 @@ def correlate_flows(findings):
 
     correlations = []
 
-    # Step 2: correlate via temporal fingerprints
     for e in entry_flows:
         for x in exit_flows:
             fp_e = e.get("temporal_fingerprint")
@@ -40,8 +29,6 @@ def correlate_flows(findings):
 
             if not fp_e or not fp_x:
                 continue
-
-            # simple fingerprint match heuristic
             if fp_e == fp_x:
                 temporal_score = 0.9
                 match = True
