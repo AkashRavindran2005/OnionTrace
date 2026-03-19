@@ -3,6 +3,8 @@ from werkzeug.utils import secure_filename
 from time_correlation import correlate_flows
 from onion_trace_backend import PCAPParser, CorrelationEngine, ForensicReporter
 from ml_detector import MLPCAPAnalyzer
+from rl_agent import RLAnalyzer
+from rl_correlation import correlate_flows_rl
 import json
 import os
 import uuid
@@ -532,6 +534,103 @@ def get_history():
                     continue
     history.reverse()
     return jsonify({"cases": history})
+
+
+# ---------------------------------------------------------------------------
+# RL Endpoints
+# ---------------------------------------------------------------------------
+
+@app.route("/api/analyze/rl", methods=["POST"])
+def analyze_pcap_rl():
+    """Analyze a PCAP using the DQN RL agent."""
+    if "pcap" not in request.files:
+        return jsonify({"error": "No PCAP file provided"}), 400
+
+    file = request.files["pcap"]
+    if file.filename == "":
+        return jsonify({"error": "No selected file"}), 400
+
+    filepath = None
+    try:
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+        file.save(filepath)
+
+        rl_analyzer = RLAnalyzer()
+        rl_report = rl_analyzer.analyze_pcap(filepath)
+
+        if "error" in rl_report:
+            return jsonify({"error": rl_report["error"]}), 400
+
+        # RL-enhanced correlation
+        correlations = correlate_flows_rl(rl_report.get("findings", []))
+        rl_report["time_correlations"] = correlations
+
+        case_id = append_case_history(filename, rl_report)
+        rl_report["metadata"]["case_id"] = case_id
+
+        return jsonify({
+            "success": True,
+            "data": rl_report,
+            "analysis_results": rl_report.get("findings", []),
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if filepath and os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except Exception:
+                pass
+
+
+@app.route("/api/rl/train", methods=["POST"])
+def train_rl_model():
+    """
+    Trigger RL model training.
+    Expects JSON: { "tor_dir": "...", "non_tor_dir": "...", "episodes": 500 }
+    """
+    try:
+        data = request.get_json(force=True)
+        tor_dir = data.get("tor_dir")
+        non_tor_dir = data.get("non_tor_dir")
+        episodes = data.get("episodes", 500)
+
+        if not tor_dir or not non_tor_dir:
+            return jsonify({"error": "tor_dir and non_tor_dir are required"}), 400
+
+        if not os.path.isdir(tor_dir):
+            return jsonify({"error": f"tor_dir not found: {tor_dir}"}), 400
+        if not os.path.isdir(non_tor_dir):
+            return jsonify({"error": f"non_tor_dir not found: {non_tor_dir}"}), 400
+
+        rl_analyzer = RLAnalyzer()
+        metrics = rl_analyzer.train(tor_dir, non_tor_dir, num_episodes=episodes)
+
+        if "error" in metrics:
+            return jsonify({"error": metrics["error"]}), 400
+
+        return jsonify({"success": True, "metrics": metrics})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/rl/status", methods=["GET"])
+def rl_status():
+    """Returns RL model availability and training metrics."""
+    rl_analyzer = RLAnalyzer()
+    metrics = rl_analyzer.get_training_metrics()
+
+    model_exists = os.path.exists("rl_tor_agent.pt")
+    corr_model_exists = os.path.exists("rl_correlation_model.pt")
+
+    return jsonify({
+        "rl_model_available": model_exists,
+        "rl_correlation_model_available": corr_model_exists,
+        "metrics": metrics,
+    })
 
 
 if __name__ == "__main__":

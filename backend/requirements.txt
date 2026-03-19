@@ -13,5 +13,10 @@ pandas
 numpy
 scikit-learn
 
+# Deep RL
+# Install CPU-only torch to avoid 2.5GB CUDA download:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+gymnasium
+
 # Reporting
 reportlab
