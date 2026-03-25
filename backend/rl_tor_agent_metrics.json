@@ -1,0 +1,11 @@
+{
+  "episodes_trained": 1000,
+  "final_accuracy": 95.0,
+  "final_epsilon": 0.05084175410881492,
+  "avg_reward_last_50": 1.4227105263157898,
+  "total_flows": 104,
+  "tor_flows": 48,
+  "non_tor_flows": 56,
+  "model_path": "D:\\chat-app-with-e2ee-backend-master\\OnionTrace\\backend\\rl_tor_agent.pt",
+  "trained_at": "2026-03-25T11:18:15.635040"
+}

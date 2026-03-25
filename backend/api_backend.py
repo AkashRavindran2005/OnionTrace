@@ -633,5 +633,349 @@ def rl_status():
     })
 
 
+# ---------------------------------------------------------------------------
+# Live Packet Capture  (Scapy-based)
+# ---------------------------------------------------------------------------
+
+import threading
+import time
+import queue
+from collections import defaultdict
+
+class CaptureSession:
+    """Thread-safe live capture state."""
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.running = False
+        self.sniffer = None
+        self.packets_captured = 0
+        self.flows: dict = defaultdict(list)     # (src,dst) -> list of packets
+        self.tor_findings: list = []
+        self.classified_flows: set = set()       # already classified flow keys
+        self.event_queue: queue.Queue = queue.Queue(maxsize=500)
+        self.engine = 'rf'
+        self.interface = None
+
+    def reset(self):
+        with self._lock:
+            self.running = False
+            self.sniffer = None
+            self.packets_captured = 0
+            self.flows.clear()
+            self.tor_findings.clear()
+            self.classified_flows.clear()
+            self.engine = 'rf'
+            self.interface = None
+        # drain the queue
+        while not self.event_queue.empty():
+            try: self.event_queue.get_nowait()
+            except queue.Empty: break
+
+    def push_event(self, kind: str, payload: dict):
+        msg = json.dumps({"type": kind, **payload})
+        try:
+            self.event_queue.put_nowait(msg)
+        except queue.Full:
+            pass
+
+_capture = CaptureSession()
+
+
+_global_rl_agent = None
+
+def _is_private(ip_str):
+    if ip_str.startswith("10.") or ip_str.startswith("192.168.") or ip_str == "127.0.0.1": 
+        return True
+    if ip_str.startswith("172."):
+        try:
+            second = int(ip_str.split(".")[1])
+            if 16 <= second <= 31: return True
+        except: pass
+    return False
+
+def _classify_flow(flow_key, packets, engine):
+    """Classify a single flow. Returns a finding dict or None."""
+    try:
+        from ml_detector import MLPCAPAnalyzer
+        from rl_agent import RLAnalyzer, TorFlowEnvironment
+        import math
+        import torch
+        import numpy as np
+
+        src, dst = flow_key
+        flow_data = {"src": src, "dst": dst, "packets": packets}
+
+        if engine == 'rl':
+            global _global_rl_agent
+            if _global_rl_agent is None:
+                _global_rl_agent = RLAnalyzer()
+                if not _global_rl_agent.agent.load():
+                    return None
+            
+            rl = _global_rl_agent
+            env = TorFlowEnvironment([flow_data], [0], window_size=8)
+            state = env.reset(flow_idx=0)
+            
+            q_value_history = []
+            while not env.done:
+                with torch.no_grad():
+                    state_t = torch.FloatTensor(state).unsqueeze(0).to(rl.agent.device)
+                    q_vals = rl.agent.policy_net(state_t)[0]
+                    q_dict = {
+                        "observe": float(q_vals[0].item()),
+                        "classify_tor": float(q_vals[1].item()),
+                        "classify_not_tor": float(q_vals[2].item()),
+                    }
+                    q_value_history.append(q_dict)
+                action = rl.agent.select_action(state, training=False)
+                state, _, _, _ = env.step(action)
+            
+            last_action = action
+            
+            if q_value_history:
+                final_q = q_value_history[-1]
+                q_tor = final_q["classify_tor"]
+                q_not = final_q["classify_not_tor"]
+                q_margin = q_tor - q_not
+                raw_confidence = 1.0 / (1.0 + math.exp(-q_margin * 1.5))  # Smooth sigmoid
+                confidence = float(raw_confidence * 100)
+            else:
+                confidence = 0.0
+                q_margin = 0.0
+
+            if last_action == 1:
+                is_tor = True
+            elif last_action == 2:
+                is_tor = False
+            else:
+                is_tor = q_margin > 0
+
+            # Fallback for noise: only flag if confidence is notably high (90% for live capture)
+            if not is_tor or confidence < 90.0:
+                is_tor = False
+
+        else:
+            # RF path
+            analyzer = MLPCAPAnalyzer()
+            analyzer.flows[flow_key] = packets
+            features = analyzer.extract_features(flow_key)
+            if features is None:
+                return None
+            if not analyzer.load_model():
+                return None
+            proba = analyzer.model.predict_proba([features])[0]
+            confidence = float(proba[1]) * 100
+            is_tor = confidence >= 90.0
+
+        # Ignore purely internal network traffic
+        if _is_private(src) and _is_private(dst):
+            is_tor = False
+
+        # STRICT DEMO FILTER: Real Tor traffic MUST contain 512-byte cells.
+        # If less than 20% of the transmission is near 512 bytes, it's definitively NOT Tor.
+        sizes = [p["size"] for p in packets]
+        num_tor_cells = sum(1 for s in sizes if 500 <= s <= 520)
+        if (num_tor_cells / max(1, len(sizes))) < 0.2:
+            is_tor = False
+
+        if not is_tor:
+            return None
+
+        timestamps = [p["timestamp"] for p in packets]
+        return {
+            "origin_ip": src,
+            "exit_ip": dst,
+            "confidence": round(confidence, 2),
+            "packet_count": len(packets),
+            "duration": round(max(timestamps) - min(timestamps), 3) if len(timestamps) > 1 else 0,
+            "start_time_iso": __import__('datetime').datetime.utcfromtimestamp(min(timestamps)).isoformat() + "Z",
+            "engine": engine.upper(),
+        }
+    except Exception as e:
+        print(f"[CAPTURE] classify error: {e}")
+        return None
+
+
+def _packet_handler(pkt):
+    """Called for every captured packet, must be fast."""
+    try:
+        from scapy.layers.inet import IP, TCP
+        # Tor is exclusively TCP. Ignore UDP/ICMP noise.
+        if IP not in pkt or TCP not in pkt:
+            return
+        ip = pkt[IP]
+        ts = float(pkt.time)
+        size = len(bytes(pkt))
+        flow_key = (ip.src, ip.dst)
+
+        with _capture._lock:
+            _capture.packets_captured += 1
+            cnt = _capture.packets_captured
+            _capture.flows[flow_key].append({"timestamp": ts, "size": size, "packet_num": cnt})
+            pkt_list = list(_capture.flows[flow_key])
+            already = flow_key in _capture.classified_flows
+
+        # Push raw packet event every packet
+        _capture.push_event("packet", {
+            "count": cnt,
+            "src": ip.src,
+            "dst": ip.dst,
+            "size": size,
+            "proto": ip.proto,
+        })
+
+        # Classify once a flow has >=15 packets and hasn't been classified yet
+        if len(pkt_list) >= 15 and not already:
+            with _capture._lock:
+                _capture.classified_flows.add(flow_key)
+
+            def _classify_async():
+                finding = _classify_flow(flow_key, pkt_list, _capture.engine)
+                if finding:
+                    with _capture._lock:
+                        _capture.tor_findings.append(finding)
+                    _capture.push_event("tor_detected", {"finding": finding})
+                else:
+                    _capture.push_event("flow_safe", {
+                        "src": flow_key[0], "dst": flow_key[1],
+                        "packet_count": len(pkt_list),
+                    })
+
+            threading.Thread(target=_classify_async, daemon=True).start()
+
+    except Exception as e:
+        print(f"[CAPTURE] packet handler error: {e}")
+
+
+@app.route("/api/capture/interfaces", methods=["GET"])
+def capture_interfaces():
+    """Return available network interfaces."""
+    try:
+        from scapy.arch.windows import get_windows_if_list
+        ifaces = get_windows_if_list()
+        result = []
+        for iface in ifaces:
+            result.append({
+                "name": iface.get("name", ""),
+                "description": iface.get("description", iface.get("name", "")),
+                "ips": iface.get("ips", []),
+                "guid": iface.get("guid", ""),
+            })
+        return jsonify({"interfaces": result})
+    except Exception:
+        # Fallback: use scapy's simpler method
+        try:
+            from scapy.all import get_if_list
+            ifaces = get_if_list()
+            result = [{"name": i, "description": i, "ips": [], "guid": ""} for i in ifaces]
+            return jsonify({"interfaces": result})
+        except Exception as e:
+            return jsonify({"interfaces": [], "error": str(e)})
+
+
+@app.route("/api/capture/start", methods=["POST"])
+def capture_start():
+    """Start live packet capture."""
+    global _capture
+    if _capture.running:
+        return jsonify({"error": "Capture already running"}), 400
+
+    data = request.get_json(force=True) or {}
+    interface = data.get("interface") or None   # None = Scapy default (all)
+    engine = data.get("engine", "rf")
+
+    _capture.reset()
+
+    try:
+        from scapy.all import AsyncSniffer
+        _capture.engine = engine
+        _capture.interface = interface
+        _capture.running = True
+
+        kwargs = {"prn": _packet_handler, "store": False, "filter": "ip"}
+        if interface:
+            kwargs["iface"] = interface
+
+        sniffer = AsyncSniffer(**kwargs)
+        sniffer.start()
+        _capture.sniffer = sniffer
+
+        return jsonify({
+            "success": True,
+            "interface": interface or "all",
+            "engine": engine,
+        })
+    except Exception as e:
+        _capture.running = False
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/capture/stop", methods=["POST"])
+def capture_stop():
+    """Stop live packet capture."""
+    global _capture
+    if not _capture.running:
+        return jsonify({"error": "No capture running"}), 400
+
+    try:
+        if _capture.sniffer:
+            _capture.sniffer.stop()
+        _capture.running = False
+        _capture.push_event("stopped", {"packets": _capture.packets_captured})
+        return jsonify({
+            "success": True,
+            "packets_captured": _capture.packets_captured,
+            "flows_found": len(_capture.flows),
+            "tor_count": len(_capture.tor_findings),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/capture/status", methods=["GET"])
+def capture_status():
+    """Return current capture state."""
+    with _capture._lock:
+        return jsonify({
+            "running": _capture.running,
+            "packets_captured": _capture.packets_captured,
+            "flows_found": len(_capture.flows),
+            "tor_count": len(_capture.tor_findings),
+            "interface": _capture.interface or "all",
+            "engine": _capture.engine,
+            "findings": _capture.tor_findings[-10:],  # last 10
+        })
+
+
+@app.route("/api/capture/stream", methods=["GET"])
+def capture_stream():
+    """
+    Server-Sent Events stream for live capture events.
+    Frontend connects with EventSource('/api/capture/stream').
+    """
+    def generate():
+        yield "data: {\"type\":\"connected\"}\n\n"
+        while True:
+            try:
+                msg = _capture.event_queue.get(timeout=1.0)
+                yield f"data: {msg}\n\n"
+            except queue.Empty:
+                # Send heartbeat so connection stays alive
+                yield "data: {\"type\":\"heartbeat\"}\n\n"
+                if not _capture.running:
+                    break
+
+    return app.response_class(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+
